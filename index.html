@@ -105,7 +105,7 @@
 <h1>🍈 멜론말랑이 어드벤처</h1>
 <div class="info">
   <div class="desktop-only">← → 이동 / ↑ 점프 / 스페이스 공격</div>
-  <div>음식 먹으면 파워 UP! 일반→중간→최종 보스를 물리치세요!</div>
+  <div>몬스터 10마리 중 3마리가 특별 아이템 드롭! 🔫총 🔥불 🪽날기</div>
   <div class="controls">보스 격파 후 [진행] 또는 [END] 선택</div>
 </div>
 <div id="loading">멜론말랑이 불러오는 중...</div>
@@ -175,6 +175,18 @@ let stageStartTime = Date.now();
 let gameReady = false;
 let killCount = 0;
 let bossesDefeated = 0;
+let monsterKillStreak = 0;
+let dropItems = [];
+let playerBullets = [];
+let flameEffects = [];
+let pickupNotice = null;
+
+const SPECIAL_ITEMS = {
+  gun:  { emoji: "🔫", label: "총쏘기", color: "#aaa" },
+  fire: { emoji: "🔥", label: "불뿜기", color: "#ff6600" },
+  fly:  { emoji: "🪽", label: "하늘날기", color: "#88ccff" }
+};
+const ITEM_TYPES = ["gun", "fire", "fly"];
 
 const playerImg = new Image();
 playerImg.onload = () => { gameReady = true; document.getElementById("loading").textContent = ""; };
@@ -184,7 +196,8 @@ playerImg.src = "assets/melon-mallang.png";
 const player = {
   x: 60, y: 380, w: 58, h: 58, speed: 4,
   hp: 100, maxHp: 100, power: 1, facing: 1,
-  attacking: false, vy: 0, onGround: true, invincible: 0
+  attacking: false, vy: 0, onGround: true, invincible: 0,
+  abilities: { gun: false, fire: false, fly: false }
 };
 
 function mon(x, hp, emoji, patrol) {
@@ -361,13 +374,20 @@ function bindTouchBtn(id, down, up) {
 
 bindTouchBtn("btn-left",  () => keys["ArrowLeft"] = true,  () => keys["ArrowLeft"] = false);
 bindTouchBtn("btn-right", () => keys["ArrowRight"] = true, () => keys["ArrowRight"] = false);
-bindTouchBtn("btn-jump",  () => { if (player.onGround && !gamePaused) { player.vy = JUMP_FORCE; player.onGround = false; } });
+bindTouchBtn("btn-jump",  () => {
+  if (gamePaused) return;
+  if (player.onGround) { player.vy = JUMP_FORCE; player.onGround = false; }
+  else if (player.abilities.fly) { player.vy = Math.min(player.vy, -5); }
+});
 bindTouchBtn("btn-attack", () => attack());
 
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "Space") { e.preventDefault(); attack(); }
-  if (e.code === "ArrowUp" && player.onGround && !gamePaused) { player.vy = JUMP_FORCE; player.onGround = false; }
+  if (e.code === "ArrowUp" && !gamePaused) {
+    if (player.onGround) { player.vy = JUMP_FORCE; player.onGround = false; }
+    else if (player.abilities.fly) { player.vy = Math.min(player.vy, -5); }
+  }
 });
 document.addEventListener("keyup", e => { keys[e.code] = false; });
 
@@ -378,7 +398,9 @@ document.addEventListener("touchmove", e => {
 function resetGame() {
   currentStage = 1; gameClear = false; gameOver = false;
   gamePaused = false; pendingAction = null;
-  bossProjectiles = []; killCount = 0; bossesDefeated = 0;
+  bossProjectiles = []; playerBullets = []; flameEffects = []; dropItems = [];
+  killCount = 0; bossesDefeated = 0; monsterKillStreak = 0;
+  player.abilities = { gun: false, fire: false, fly: false };
   document.getElementById("exit-screen").classList.remove("show");
   document.getElementById("game-wrap").style.display = "inline-block";
   loadStage(1, true);
@@ -390,10 +412,54 @@ function loadStage(num, fullReset) {
   foods = stage.foods; monsters = stage.monsters; bosses = stage.bosses;
   platforms = stage.platforms; decor = stage.decor; sections = stage.sections || [];
   worldWidth = stage.worldWidth;
-  bossProjectiles = []; cameraX = 0; stageStartTime = Date.now();
+  bossProjectiles = []; playerBullets = []; flameEffects = []; dropItems = [];
+  cameraX = 0; stageStartTime = Date.now();
   player.x = 60; player.y = 380; player.vy = 0; player.onGround = true; player.invincible = 0;
-  if (fullReset) { player.hp = 100; player.power = 1; killCount = 0; bossesDefeated = 0; }
-  else { player.hp = Math.min(player.maxHp, player.hp + 25); player.power += 1; }
+  if (fullReset) {
+    player.hp = 100; player.power = 1; killCount = 0; bossesDefeated = 0;
+    monsterKillStreak = 0; dropItems = [];
+    player.abilities = { gun: false, fire: false, fly: false };
+  } else {
+    player.hp = Math.min(player.maxHp, player.hp + 25); player.power += 1;
+  }
+}
+
+function spawnSpecialDrop(x, y) {
+  const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+  const info = SPECIAL_ITEMS[type];
+  dropItems.push({
+    x: x + 5, y: y - 30, w: 40, h: 40, type,
+    emoji: info.emoji, label: info.label, color: info.color,
+    vy: -5, groundY: GROUND_Y - 42, bob: 0, collected: false
+  });
+}
+
+function onMonsterKill(m) {
+  m.alive = false;
+  killCount++;
+  monsterKillStreak++;
+  if ((monsterKillStreak - 1) % 10 < 3) spawnSpecialDrop(m.x, m.y);
+}
+
+function showPickupNotice(label) {
+  pickupNotice = { text: label + " 획득! 계속 사용 가능!", timer: 120 };
+}
+
+function damageMonster(m, dmg) {
+  if (!m.alive) return;
+  m.hp -= dmg;
+  if (m.hp <= 0) onMonsterKill(m);
+}
+
+function collectDropItem(item) {
+  if (player.abilities[item.type]) {
+    player.power += 1;
+    showPickupNotice(item.label + " (이미 보유 · PWR+1)");
+  } else {
+    player.abilities[item.type] = true;
+    showPickupNotice(item.label);
+  }
+  item.collected = true;
 }
 
 function rectHit(a, b) {
@@ -401,16 +467,36 @@ function rectHit(a, b) {
 }
 function sx(x) { return x - cameraX; }
 
+function fireGun() {
+  playerBullets.push({
+    x: player.facing === 1 ? player.x + player.w : player.x - 24,
+    y: player.y + player.h / 2 - 4,
+    w: 24, h: 8, vx: player.facing * 14, life: 90, damage: player.power * 2
+  });
+}
+
+function fireBreath() {
+  const flameBox = {
+    x: player.facing === 1 ? player.x + player.w : player.x - 90,
+    y: player.y + 8, w: 90, h: 40
+  };
+  flameEffects.push({ x: flameBox.x, y: flameBox.y, w: flameBox.w, h: flameBox.h, life: 18, facing: player.facing });
+  monsters.forEach(m => { if (m.alive && rectHit(flameBox, m)) damageMonster(m, player.power * 2); });
+  bosses.forEach(b => {
+    if (b.alive && rectHit(flameBox, b)) { b.hp -= player.power * 2; if (b.hp <= 0) onBossDefeated(b); }
+  });
+}
+
 function attack() {
   if (player.attacking || gameClear || gameOver || gamePaused) return;
   player.attacking = true;
   const attackBox = { x: player.facing === 1 ? player.x + player.w : player.x - 40, y: player.y + 8, w: 40, h: 40 };
-  monsters.forEach(m => {
-    if (m.alive && rectHit(attackBox, m)) { m.hp -= player.power; if (m.hp <= 0) { m.alive = false; killCount++; } }
-  });
+  monsters.forEach(m => { if (m.alive && rectHit(attackBox, m)) damageMonster(m, player.power); });
   bosses.forEach(b => {
     if (b.alive && rectHit(attackBox, b)) { b.hp -= player.power; if (b.hp <= 0) onBossDefeated(b); }
   });
+  if (player.abilities.gun) fireGun();
+  if (player.abilities.fire) fireBreath();
   setTimeout(() => { player.attacking = false; }, 180);
 }
 
@@ -466,6 +552,10 @@ function updateMonsters() {
 function updatePlayerPhysics() {
   if (keys["ArrowLeft"]) { player.x -= player.speed; player.facing = -1; }
   if (keys["ArrowRight"]) { player.x += player.speed; player.facing = 1; }
+  if (player.abilities.fly && keys["ArrowUp"] && !player.onGround) {
+    player.vy -= 0.55;
+    if (player.vy < -7) player.vy = -7;
+  }
   player.vy += GRAVITY; player.y += player.vy;
   const groundY = getGroundY(player);
   if (player.y >= groundY) { player.y = groundY; player.vy = 0; player.onGround = true; }
@@ -506,6 +596,32 @@ function updateProjectiles() {
     if (player.invincible <= 0 && rectHit(player, p)) { player.hp -= p.damage; player.invincible = 60; }
     return p.x > cameraX - 80 && p.x < cameraX + VIEW_W + 80;
   });
+
+  playerBullets = playerBullets.filter(b => {
+    b.x += b.vx; b.life--;
+    if (b.life <= 0) return false;
+    monsters.forEach(m => { if (m.alive && rectHit(b, m)) { damageMonster(m, b.damage); b.life = 0; } });
+    bosses.forEach(boss => {
+      if (boss.alive && rectHit(b, boss)) { boss.hp -= b.damage; b.life = 0; if (boss.hp <= 0) onBossDefeated(boss); }
+    });
+    return b.life > 0 && b.x > cameraX - 50 && b.x < cameraX + VIEW_W + 50;
+  });
+
+  flameEffects = flameEffects.filter(f => { f.life--; return f.life > 0; });
+}
+
+function updateDropItems() {
+  dropItems.forEach(item => {
+    if (item.y < item.groundY) {
+      item.vy += GRAVITY * 0.6;
+      item.y += item.vy;
+      if (item.y >= item.groundY) { item.y = item.groundY; item.vy = 0; }
+    }
+    item.bob += 0.1;
+    if (!item.collected && rectHit(player, item)) collectDropItem(item);
+  });
+  dropItems = dropItems.filter(i => !i.collected);
+  if (pickupNotice) { pickupNotice.timer--; if (pickupNotice.timer <= 0) pickupNotice = null; }
 }
 
 function update() {
@@ -520,7 +636,7 @@ function update() {
     monsters.forEach(m => { if (m.alive && rectHit(player, m)) { player.hp -= currentStage === 1 ? 0.35 : 0.45; player.invincible = 30; } });
     bosses.forEach(b => { if (b.alive && rectHit(player, b)) { player.hp -= b.tier === "normal" ? 0.7 : b.tier === "mid" ? 0.9 : 1.2; player.invincible = 30; } });
   }
-  updateBossSpecials(); updateProjectiles();
+  updateBossSpecials(); updateProjectiles(); updateDropItems();
   if (player.hp <= 0 && !gameOver) {
     gameOver = true;
     showModal("💀 게임 오버", "스테이지 " + currentStage + " · 보스 " + bossesDefeated + "/6",
@@ -597,6 +713,51 @@ function drawPlayer() {
     ctx.fillStyle = "rgba(255,255,0,0.55)";
     ctx.fillRect(player.facing === 1 ? px + player.w : px - 40, py + 8, 40, 40);
   }
+  if (player.abilities.fly && !player.onGround) {
+    ctx.fillStyle = "rgba(136,204,255,0.5)";
+    ctx.font = "20px Arial";
+    ctx.fillText("🪽", px + 10, py + player.h + 10);
+  }
+}
+
+function drawDropItems() {
+  dropItems.forEach(item => {
+    if (item.x + item.w < cameraX - 50 || item.x > cameraX + VIEW_W + 50) return;
+    const bobY = Math.sin(item.bob) * 4;
+    const dx = sx(item.x), dy = item.y + bobY;
+    ctx.fillStyle = item.color;
+    ctx.beginPath();
+    ctx.arc(dx + item.w / 2, dy + item.h / 2, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 2;
+    ctx.stroke(); ctx.lineWidth = 1;
+    ctx.font = "26px Arial"; ctx.fillStyle = "black";
+    ctx.fillText(item.emoji, dx + 6, dy + 30);
+    ctx.font = "11px Arial"; ctx.fillStyle = "#ffd700";
+    ctx.fillText(item.label, dx - 2, dy - 6);
+  });
+}
+
+function drawPlayerBullets() {
+  playerBullets.forEach(b => {
+    if (b.x < cameraX - 30 || b.x > cameraX + VIEW_W + 30) return;
+    ctx.fillStyle = "#ffd700";
+    ctx.fillRect(sx(b.x), b.y, b.w, b.h);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(sx(b.x) + 4, b.y + 2, b.w - 8, b.h - 4);
+  });
+}
+
+function drawFlameEffects() {
+  flameEffects.forEach(f => {
+    if (f.x + f.w < cameraX - 50 || f.x > cameraX + VIEW_W + 50) return;
+    const alpha = f.life / 18;
+    ctx.fillStyle = "rgba(255,100,0," + alpha * 0.7 + ")";
+    ctx.fillRect(sx(f.x), f.y, f.w, f.h);
+    ctx.fillStyle = "rgba(255,255,0," + alpha * 0.5 + ")";
+    ctx.fillRect(sx(f.x) + 10, f.y + 5, f.w - 20, f.h - 10);
+    ctx.font = "22px Arial"; ctx.fillText("🔥", sx(f.x) + f.w / 2 - 10, f.y + 28);
+  });
 }
 
 function drawFoods() {
@@ -641,12 +802,14 @@ function drawBosses() {
 }
 
 function drawProjectiles() {
+  drawPlayerBullets();
   bossProjectiles.forEach(p => {
     if (p.x + p.w < cameraX - 50 || p.x > cameraX + VIEW_W + 50) return;
     ctx.fillStyle = "rgba(255,50,50,0.85)";
     ctx.beginPath(); ctx.arc(sx(p.x) + p.w / 2, p.y + p.h / 2, 18, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "white"; ctx.font = "20px Arial"; ctx.fillText("💥", sx(p.x) + 8, p.y + 28);
   });
+  drawFlameEffects();
 }
 
 function drawUI() {
@@ -664,6 +827,19 @@ function drawUI() {
   if (nextBoss) { ctx.fillStyle = nextBoss.tierColor; ctx.font = "11px Arial"; ctx.fillText("다음:" + nextBoss.tierLabel, 280, 42); }
   ctx.fillStyle = "white"; ctx.font = "12px Arial";
   ctx.fillText("STG" + currentStage + "/2  " + progress + "%", VIEW_W - 120, 30);
+  const ab = [];
+  if (player.abilities.gun) ab.push("🔫");
+  if (player.abilities.fire) ab.push("🔥");
+  if (player.abilities.fly) ab.push("🪽");
+  if (ab.length) {
+    ctx.fillStyle = "#ffd700"; ctx.font = "14px Arial";
+    ctx.fillText("능력:" + ab.join(""), 620, 30);
+  }
+  if (pickupNotice) {
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(VIEW_W / 2 - 160, 70, 320, 36);
+    ctx.fillStyle = "#ffd700"; ctx.font = "16px Arial";
+    ctx.fillText(pickupNotice.text, VIEW_W / 2 - 140, 93);
+  }
   if (gamePaused) {
     ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(0, 62, VIEW_W, VIEW_H - 62);
     ctx.fillStyle = "#ffd700"; ctx.font = "22px Arial"; ctx.fillText("⏸ 일시정지", VIEW_W / 2 - 50, VIEW_H / 2);
@@ -673,7 +849,7 @@ function drawUI() {
 function gameLoop() {
   drawBackground();
   if (!gamePaused) update();
-  drawMap(); drawFoods(); drawMonsters(); drawBosses(); drawProjectiles(); drawPlayer(); drawUI();
+  drawMap(); drawFoods(); drawDropItems(); drawMonsters(); drawBosses(); drawProjectiles(); drawPlayer(); drawUI();
   requestAnimationFrame(gameLoop);
 }
 
