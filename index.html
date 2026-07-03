@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>멜론말랑이 어드벤처</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #222; font-family: Arial, sans-serif;
+    text-align: center; color: white;
+    touch-action: manipulation; overflow-x: hidden;
+  }
+  h1 { margin: 8px 0; font-size: clamp(18px, 5vw, 28px); }
+  .info { margin: 6px 10px; font-size: clamp(12px, 3vw, 16px); line-height: 1.5; }
+  .controls { color: #ffd700; font-size: clamp(11px, 2.8vw, 14px); }
+  #loading { color: #ffd700; font-size: 16px; margin: 6px; }
+
+  #game-wrap {
+    position: relative; display: inline-block; max-width: 100%;
+    margin: 0 auto;
+  }
+
+  canvas {
+    background: linear-gradient(#8ee7ff, #b9ff9b);
+    border: 3px solid #fff; display: block;
+    width: 100%; max-width: 900px; height: auto;
+    touch-action: none;
+  }
+
+  #mobile-controls {
+    display: none;
+    margin-top: 8px;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0 8px 12px;
+  }
+
+  @media (max-width: 900px), (pointer: coarse) {
+    #mobile-controls { display: flex; }
+    .desktop-only { display: none; }
+  }
+
+  .ctrl-btn {
+    width: 72px; height: 72px;
+    border: none; border-radius: 14px;
+    font-size: 26px; font-weight: bold;
+    color: white; cursor: pointer;
+    user-select: none;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.35);
+    touch-action: manipulation;
+  }
+  .ctrl-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.35); }
+  .ctrl-move { background: #4a90d9; }
+  .ctrl-jump { background: #5cb85c; width: 80px; }
+  .ctrl-attack { background: #e74c3c; width: 90px; font-size: 18px; }
+
+  .ctrl-row { display: flex; gap: 8px; align-items: center; }
+
+  #boss-modal, #exit-screen {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.82);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #boss-modal.show, #exit-screen.show { display: flex; }
+
+  .modal-box {
+    background: linear-gradient(135deg, #2a3a5a, #1a2030);
+    border: 3px solid #ffd700;
+    border-radius: 20px;
+    padding: 28px 24px;
+    max-width: 360px;
+    width: 100%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .modal-box h2 { margin: 0 0 12px; font-size: 24px; color: #ffd700; }
+  .modal-box p { margin: 8px 0; font-size: 16px; line-height: 1.5; color: #eee; }
+  .modal-btns { display: flex; gap: 12px; margin-top: 24px; justify-content: center; flex-wrap: wrap; }
+
+  .modal-btn {
+    min-width: 120px; padding: 14px 28px;
+    border: none; border-radius: 12px;
+    font-size: 18px; font-weight: bold;
+    cursor: pointer; touch-action: manipulation;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+  }
+  .modal-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+  #btn-continue { background: #5cb85c; color: white; }
+  #btn-end { background: #555; color: white; }
+
+  #exit-screen .modal-box h2 { color: #ff6b6b; }
+  #exit-screen p { font-size: 18px; }
+</style>
+</head>
+<body>
+
+<h1>🍈 멜론말랑이 어드벤처</h1>
+<div class="info">
+  <div class="desktop-only">← → 이동 / ↑ 점프 / 스페이스 공격</div>
+  <div>음식 먹으면 파워 UP! 일반→중간→최종 보스를 물리치세요!</div>
+  <div class="controls">보스 격파 후 [진행] 또는 [END] 선택</div>
+</div>
+<div id="loading">멜론말랑이 불러오는 중...</div>
+
+<div id="game-wrap">
+  <canvas id="game" width="900" height="500"></canvas>
+</div>
+
+<div id="mobile-controls">
+  <div class="ctrl-row">
+    <button class="ctrl-btn ctrl-move" id="btn-left" aria-label="왼쪽">◀</button>
+    <button class="ctrl-btn ctrl-jump" id="btn-jump" aria-label="점프">▲</button>
+    <button class="ctrl-btn ctrl-move" id="btn-right" aria-label="오른쪽">▶</button>
+  </div>
+  <button class="ctrl-btn ctrl-attack" id="btn-attack" aria-label="공격">⚔ 공격</button>
+</div>
+
+<div id="boss-modal">
+  <div class="modal-box">
+    <h2 id="modal-title">보스 격파!</h2>
+    <p id="modal-sub"></p>
+    <p id="modal-detail"></p>
+    <div class="modal-btns">
+      <button class="modal-btn" id="btn-continue">진행</button>
+      <button class="modal-btn" id="btn-end">END</button>
+    </div>
+  </div>
+</div>
+
+<div id="exit-screen">
+  <div class="modal-box">
+    <h2>👋 게임 종료</h2>
+    <p>멜론말랑이와 함께해 주셔서 감사합니다!</p>
+    <p id="exit-stats"></p>
+    <div class="modal-btns">
+      <button class="modal-btn" id="btn-restart">다시하기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const GROUND_Y = 430;
+const GRAVITY = 0.55;
+const JUMP_FORCE = -13;
+const VIEW_W = canvas.width;
+const VIEW_H = canvas.height;
+
+const BOSS_TIER = {
+  normal: { label: "일반보스", color: "#ffd700", barW: 5, proj: 1, dmg: 12, cd: 200 },
+  mid:    { label: "중간보스", color: "#ff8800", barW: 6, proj: 2, dmg: 14, cd: 160 },
+  final:  { label: "최종보스", color: "#ff2222", barW: 7, proj: 3, dmg: 16, cd: 130 }
+};
+
+let keys = {};
+let gameClear = false;
+let gameOver = false;
+let gamePaused = false;
+let currentStage = 1;
+let pendingAction = null;
+let bossProjectiles = [];
+let cameraX = 0;
+let worldWidth = 26000;
+let stageStartTime = Date.now();
+let gameReady = false;
+let killCount = 0;
+let bossesDefeated = 0;
+
+const playerImg = new Image();
+playerImg.onload = () => { gameReady = true; document.getElementById("loading").textContent = ""; };
+playerImg.onerror = () => { document.getElementById("loading").textContent = "캐릭터 이미지 로드 실패"; };
+playerImg.src = "assets/melon-mallang.png";
+
+const player = {
+  x: 60, y: 380, w: 58, h: 58, speed: 4,
+  hp: 100, maxHp: 100, power: 1, facing: 1,
+  attacking: false, vy: 0, onGround: true, invincible: 0
+};
+
+function mon(x, hp, emoji, patrol) {
+  return { x, y: 390, w: 45, h: 45, hp, maxHp: hp, alive: true, emoji, patrol: patrol || 0, originX: x, dir: 1 };
+}
+function food(x, y, type) { return { x, y, type, eaten: false }; }
+function plat(x, y, w) { return { x, y, w, h: 15 }; }
+function boss(x, y, w, h, hp, emoji, name, tier) {
+  const t = BOSS_TIER[tier];
+  return { x, y, w, h, hp, maxHp: hp, alive: true, emoji, name, tier,
+    specialCooldown: 60, specialCharge: 0, specialActive: false, tierLabel: t.label, tierColor: t.color };
+}
+
+function buildMonsters(W, emojis, spacing, hpScale) {
+  const monsters = [];
+  for (let x = 300; x < W - 1000; x += spacing + (x % 140)) {
+    const hp = Math.min(10, 2 + Math.floor((x / W) * hpScale));
+    monsters.push(mon(x, hp, emojis[Math.floor(x / 380) % emojis.length], 40 + (x % 30)));
+  }
+  for (let wx = 1800; wx < W - 2000; wx += 2200) {
+    const hp = Math.min(10, 3 + Math.floor((wx / W) * hpScale));
+    const e = emojis[Math.floor(wx / 500) % emojis.length];
+    monsters.push(mon(wx, hp, e, 0), mon(wx + 70, hp, e, 0), mon(wx + 140, hp + 1, "👹", 0), mon(wx + 220, hp, e, 0));
+  }
+  return monsters;
+}
+
+function buildFoods(W) {
+  const types = ["🍙", "🍗", "🍈", "⭐"];
+  const foods = [];
+  for (let x = 200; x < W - 600; x += 380 + (x % 130)) {
+    foods.push(food(x, Math.max(195, 390 - (x % 4) * 26 - (x % 8 === 0 ? 65 : 0)), types[Math.floor(x / 450) % types.length]));
+  }
+  return foods;
+}
+
+function buildPlatforms(W, bossList) {
+  const platforms = [];
+  for (let x = 160; x < W - 400; x += 300 + (x % 120)) {
+    platforms.push(plat(x, Math.max(185, 350 - (x % 5) * 22 - (Math.floor(x / 800) % 4) * 16), 80 + (x % 85)));
+  }
+  bossList.forEach(b => platforms.push(plat(b.x - 120, b.y + b.h - 10, 360)));
+  platforms.push(plat(W - 700, 360, 450));
+  return platforms;
+}
+
+function buildStage1() {
+  const W = 26000;
+  const bosses = [
+    boss(5800, 355, 68, 82, 14, "🐺", "숲지기", "normal"),
+    boss(13800, 345, 74, 88, 22, "👹", "돌거인", "mid"),
+    boss(W - 400, 325, 88, 102, 32, "👺", "숲의 대요괴", "final")
+  ];
+  const labels = ["구역1·숲입구","구역2·돌탑","구역3·개울","구역4·깊은숲","⚔일반보스","구역6·고목","구역7·안개","구역8·절벽","⚔중간보스","구역10·유적","⚔최종보스"];
+  return {
+    name: "스테이지 1 - 초장편 숲길", worldWidth: W, bgTop: "#8ee7ff", bgBottom: "#b9ff9b",
+    sections: labels.map((label, i) => ({ x: 80 + (W - 800) * (i / (labels.length - 1)), label })),
+    foods: buildFoods(W), monsters: buildMonsters(W, ["👾","🐛","🦇","🐺","💀","👻"], 300, 8),
+    bosses, platforms: buildPlatforms(W, bosses), decor: buildForestDecor(W)
+  };
+}
+
+function buildStage2() {
+  const W = 12000;
+  const bosses = [
+    boss(2800, 355, 68, 82, 16, "💀", "죽음의 기사", "normal"),
+    boss(6200, 340, 76, 90, 24, "👻", "유령장군", "mid"),
+    boss(W - 380, 320, 90, 105, 35, "🐉", "드래곤 킹", "final")
+  ];
+  const labels = ["성 입구","저주복도","⚔일반보스","지하감옥","⚔중간보스","마왕의탑","⚔최종보스"];
+  return {
+    name: "스테이지 2 - 어둠의 성", worldWidth: W, bgTop: "#4a3a6b", bgBottom: "#2d1f3d",
+    sections: labels.map((label, i) => ({ x: 80 + (W - 600) * (i / (labels.length - 1)), label })),
+    foods: buildFoods(W), monsters: buildMonsters(W, ["💀","👻","🦇","🐺","👹","🕷"], 320, 9),
+    bosses, platforms: buildPlatforms(W, bosses), decor: buildCastleDecor(W)
+  };
+}
+
+function buildForestDecor(W) {
+  const decor = [], extras = ["🌸","🍄","🦋","🌼","🪨","💧"];
+  for (let x = 60; x < W - 200; x += 260) {
+    decor.push({ emoji: x % 520 === 60 ? "🌳" : "🌲", x, y: 405 + (x % 3) * 5 });
+    if (x % 780 === 60) decor.push({ emoji: extras[Math.floor(x/780) % extras.length], x: x + 50, y: 365 + (x % 4) * 6 });
+  }
+  decor.push({ emoji: "🏰", x: W - 180, y: 320 });
+  return decor;
+}
+
+function buildCastleDecor(W) {
+  const decor = [];
+  for (let x = 80; x < W - 150; x += 350) {
+    decor.push({ emoji: x % 700 === 80 ? "🏯" : "🔥", x, y: x % 700 === 80 ? 310 : 405 });
+  }
+  decor.push({ emoji: "🌑", x: 100, y: 70 }, { emoji: "👑", x: W - 150, y: 280 });
+  return decor;
+}
+
+function createStageData(n) { return n === 1 ? buildStage1() : buildStage2(); }
+
+let stage, foods, monsters, bosses, platforms, decor, sections;
+
+function bootGame() { loadStage(1, true); }
+
+function showModal(title, sub, detail, action) {
+  gamePaused = true;
+  pendingAction = action;
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-sub").textContent = sub;
+  document.getElementById("modal-detail").textContent = detail;
+  document.getElementById("boss-modal").classList.add("show");
+
+  const continueBtn = document.getElementById("btn-continue");
+  if (action.type === "clear") {
+    continueBtn.textContent = "다시하기";
+  } else if (action.type === "over") {
+    continueBtn.textContent = "재도전";
+  } else {
+    continueBtn.textContent = action.nextStage ? "진행 ▶" : "진행 ▶";
+  }
+}
+
+function hideModal() {
+  gamePaused = false;
+  document.getElementById("boss-modal").classList.remove("show");
+}
+
+function endGame() {
+  hideModal();
+  document.getElementById("game-wrap").style.display = "none";
+  document.getElementById("mobile-controls").style.display = "none";
+  document.getElementById("exit-stats").textContent =
+    "처치 " + killCount + "마리 · 보스 " + bossesDefeated + "/6 격파";
+  document.getElementById("exit-screen").classList.add("show");
+  try { window.close(); } catch (e) {}
+}
+
+function handleContinue() {
+  const action = pendingAction;
+  hideModal();
+  pendingAction = null;
+
+  if (!action) return;
+
+  if (action.type === "clear") { resetGame(); return; }
+  if (action.type === "over") { resetGame(); return; }
+
+  if (action.nextStage) {
+    loadStage(action.nextStage, false);
+  }
+}
+
+function handleEnd() { endGame(); }
+
+document.getElementById("btn-continue").addEventListener("click", handleContinue);
+document.getElementById("btn-end").addEventListener("click", handleEnd);
+document.getElementById("btn-restart").addEventListener("click", () => {
+  document.getElementById("exit-screen").classList.remove("show");
+  document.getElementById("game-wrap").style.display = "inline-block";
+  document.getElementById("mobile-controls").style.display = "";
+  resetGame();
+});
+
+function bindTouchBtn(id, down, up) {
+  const el = document.getElementById(id);
+  const start = e => { e.preventDefault(); down(); };
+  const stop = e => { e.preventDefault(); up(); };
+  el.addEventListener("touchstart", start, { passive: false });
+  el.addEventListener("touchend", stop, { passive: false });
+  el.addEventListener("touchcancel", stop, { passive: false });
+  el.addEventListener("mousedown", start);
+  el.addEventListener("mouseup", stop);
+  el.addEventListener("mouseleave", stop);
+}
+
+bindTouchBtn("btn-left",  () => keys["ArrowLeft"] = true,  () => keys["ArrowLeft"] = false);
+bindTouchBtn("btn-right", () => keys["ArrowRight"] = true, () => keys["ArrowRight"] = false);
+bindTouchBtn("btn-jump",  () => { if (player.onGround && !gamePaused) { player.vy = JUMP_FORCE; player.onGround = false; } });
+bindTouchBtn("btn-attack", () => attack());
+
+document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "Space") { e.preventDefault(); attack(); }
+  if (e.code === "ArrowUp" && player.onGround && !gamePaused) { player.vy = JUMP_FORCE; player.onGround = false; }
+});
+document.addEventListener("keyup", e => { keys[e.code] = false; });
+
+document.addEventListener("touchmove", e => {
+  if (e.target.closest("#game-wrap, #mobile-controls, .modal-box")) e.preventDefault();
+}, { passive: false });
+
+function resetGame() {
+  currentStage = 1; gameClear = false; gameOver = false;
+  gamePaused = false; pendingAction = null;
+  bossProjectiles = []; killCount = 0; bossesDefeated = 0;
+  document.getElementById("exit-screen").classList.remove("show");
+  document.getElementById("game-wrap").style.display = "inline-block";
+  loadStage(1, true);
+}
+
+function loadStage(num, fullReset) {
+  currentStage = num;
+  stage = createStageData(num);
+  foods = stage.foods; monsters = stage.monsters; bosses = stage.bosses;
+  platforms = stage.platforms; decor = stage.decor; sections = stage.sections || [];
+  worldWidth = stage.worldWidth;
+  bossProjectiles = []; cameraX = 0; stageStartTime = Date.now();
+  player.x = 60; player.y = 380; player.vy = 0; player.onGround = true; player.invincible = 0;
+  if (fullReset) { player.hp = 100; player.power = 1; killCount = 0; bossesDefeated = 0; }
+  else { player.hp = Math.min(player.maxHp, player.hp + 25); player.power += 1; }
+}
+
+function rectHit(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function sx(x) { return x - cameraX; }
+
+function attack() {
+  if (player.attacking || gameClear || gameOver || gamePaused) return;
+  player.attacking = true;
+  const attackBox = { x: player.facing === 1 ? player.x + player.w : player.x - 40, y: player.y + 8, w: 40, h: 40 };
+  monsters.forEach(m => {
+    if (m.alive && rectHit(attackBox, m)) { m.hp -= player.power; if (m.hp <= 0) { m.alive = false; killCount++; } }
+  });
+  bosses.forEach(b => {
+    if (b.alive && rectHit(attackBox, b)) { b.hp -= player.power; if (b.hp <= 0) onBossDefeated(b); }
+  });
+  setTimeout(() => { player.attacking = false; }, 180);
+}
+
+function onBossDefeated(defeatedBoss) {
+  defeatedBoss.alive = false;
+  bossesDefeated++;
+  killCount++;
+  player.hp = Math.min(player.maxHp, player.hp + 20);
+  player.power += defeatedBoss.tier === "final" ? 2 : 1;
+
+  if (defeatedBoss.tier === "final") {
+    if (currentStage === 1) {
+      showModal("🎉 스테이지 1 클리어!", "최종보스 " + defeatedBoss.name + " 격파!",
+        "HP +20 · POWER +2 · 스테이지 2로 이동합니다",
+        { type: "boss", nextStage: 2 });
+    } else {
+      gameClear = true;
+      showModal("🏆 전체 클리어!", "드래곤 킹을 무찔렀다!",
+        "처치 " + killCount + "마리 · 보스 6체 격파!",
+        { type: "clear", nextStage: null });
+    }
+  } else {
+    showModal("⚔ " + defeatedBoss.tierLabel + " 격파!", defeatedBoss.name + "을(를) 물리쳤다!",
+      "HP +20 · POWER +1 · [진행]으로 모험 계속!",
+      { type: "boss", nextStage: null });
+  }
+}
+
+function updateCamera() {
+  cameraX = Math.max(0, Math.min(Math.max(0, worldWidth - VIEW_W), player.x - VIEW_W * 0.32));
+}
+
+function getGroundY(entity) {
+  let groundY = GROUND_Y - entity.h;
+  platforms.forEach(p => {
+    const feet = entity.y + entity.h, prevFeet = feet - (entity.vy || 0);
+    if (entity.x + entity.w > p.x && entity.x < p.x + p.w && prevFeet <= p.y && feet >= p.y && (entity.vy || 0) >= 0) {
+      groundY = Math.min(groundY, p.y - entity.h);
+    }
+  });
+  return groundY;
+}
+
+function updateMonsters() {
+  monsters.forEach(m => {
+    if (!m.alive || !m.patrol) return;
+    m.x += m.dir * 0.8;
+    if (m.x > m.originX + m.patrol) m.dir = -1;
+    if (m.x < m.originX - m.patrol) m.dir = 1;
+  });
+}
+
+function updatePlayerPhysics() {
+  if (keys["ArrowLeft"]) { player.x -= player.speed; player.facing = -1; }
+  if (keys["ArrowRight"]) { player.x += player.speed; player.facing = 1; }
+  player.vy += GRAVITY; player.y += player.vy;
+  const groundY = getGroundY(player);
+  if (player.y >= groundY) { player.y = groundY; player.vy = 0; player.onGround = true; }
+  else player.onGround = false;
+  player.x = Math.max(0, Math.min(worldWidth - player.w, player.x));
+  player.y = Math.max(0, Math.min(GROUND_Y - player.h, player.y));
+  if (player.invincible > 0) player.invincible--;
+  updateCamera();
+}
+
+function fireBossSpecial(b) {
+  const t = BOSS_TIER[b.tier];
+  b.specialActive = true; b.specialCharge = 0;
+  for (let i = 0; i < t.proj; i++) {
+    bossProjectiles.push({ x: b.x + i * 24 - (t.proj - 1) * 12, y: b.y + 40, w: 40, h: 40,
+      vx: -5 - t.proj, vy: b.tier === "final" ? (i - 1) * 2.5 : (i === 0 ? 0 : -1.2), life: 220, damage: t.dmg });
+  }
+  b.specialCooldown = t.cd;
+  setTimeout(() => { b.specialActive = false; }, 700);
+}
+
+function updateBossSpecials() {
+  bosses.forEach(b => {
+    if (!b.alive) return;
+    if (b.specialCooldown > 0) b.specialCooldown--;
+    if (b.specialCooldown <= 0 && Math.abs(player.x - b.x) < 450 && !b.specialActive) {
+      b.specialCharge++;
+      const need = b.tier === "normal" ? 100 : b.tier === "mid" ? 80 : 65;
+      if (b.specialCharge >= need) fireBossSpecial(b);
+    }
+  });
+}
+
+function updateProjectiles() {
+  bossProjectiles = bossProjectiles.filter(p => {
+    p.x += p.vx; p.y += p.vy; p.life--;
+    if (p.life <= 0) return false;
+    if (player.invincible <= 0 && rectHit(player, p)) { player.hp -= p.damage; player.invincible = 60; }
+    return p.x > cameraX - 80 && p.x < cameraX + VIEW_W + 80;
+  });
+}
+
+function update() {
+  if (gameClear || gameOver || gamePaused) return;
+  updatePlayerPhysics(); updateMonsters();
+  foods.forEach(f => {
+    if (!f.eaten && rectHit(player, { x: f.x, y: f.y, w: 35, h: 35 })) {
+      f.eaten = true; player.power += 1; player.hp = Math.min(player.maxHp, player.hp + 10);
+    }
+  });
+  if (player.invincible <= 0) {
+    monsters.forEach(m => { if (m.alive && rectHit(player, m)) { player.hp -= currentStage === 1 ? 0.35 : 0.45; player.invincible = 30; } });
+    bosses.forEach(b => { if (b.alive && rectHit(player, b)) { player.hp -= b.tier === "normal" ? 0.7 : b.tier === "mid" ? 0.9 : 1.2; player.invincible = 30; } });
+  }
+  updateBossSpecials(); updateProjectiles();
+  if (player.hp <= 0 && !gameOver) {
+    gameOver = true;
+    showModal("💀 게임 오버", "스테이지 " + currentStage + " · 보스 " + bossesDefeated + "/6",
+      "처치 " + killCount + "마리 · [재도전] 또는 [END]",
+      { type: "over", nextStage: null });
+  }
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, stage.bgTop); grad.addColorStop(1, stage.bgBottom);
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (currentStage === 1) {
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath(); ctx.arc(i * 350 + (cameraX * 0.15) % 350 - 50, 70 + i * 25, 35 + i * 6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function drawScrollingGround() {
+  const tileW = 100, start = Math.floor(cameraX / tileW), end = start + Math.ceil(VIEW_W / tileW) + 2;
+  for (let i = start; i <= end; i++) {
+    const wx = i * tileW;
+    if (wx + tileW < 0 || wx > worldWidth) continue;
+    const dx = sx(wx), drawW = Math.min(tileW + 1, worldWidth - wx + 1);
+    ctx.fillStyle = currentStage === 1 ? "#5c9e35" : "#3a5a2a";
+    ctx.fillRect(dx, GROUND_Y, drawW, 70);
+    ctx.fillStyle = currentStage === 1 ? "#8b5a2b" : "#2a1a0a";
+    ctx.fillRect(dx + 8, 458, Math.max(0, drawW - 16), 40);
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.15)"; ctx.fillRect(0, GROUND_Y, VIEW_W, 3);
+}
+
+function drawMap() {
+  drawScrollingGround();
+  platforms.forEach(p => {
+    if (p.x + p.w < cameraX - 50 || p.x > cameraX + VIEW_W + 50) return;
+    ctx.fillStyle = currentStage === 1 ? "#6b8e4e" : "#5a4a6a";
+    ctx.fillRect(sx(p.x), p.y, p.w, p.h);
+    ctx.strokeStyle = "#333"; ctx.strokeRect(sx(p.x), p.y, p.w, p.h);
+  });
+  ctx.font = "30px Arial";
+  decor.forEach(d => {
+    if (d.x + 40 < cameraX || d.x > cameraX + VIEW_W) return;
+    ctx.fillStyle = "black"; ctx.fillText(d.emoji, sx(d.x), d.y);
+  });
+  sections.forEach(sec => {
+    if (sec.x < cameraX - 200 || sec.x > cameraX + VIEW_W + 200) return;
+    const isBoss = sec.label.includes("보스");
+    ctx.fillStyle = isBoss ? "rgba(120,0,0,0.7)" : "rgba(0,0,0,0.55)";
+    ctx.fillRect(sx(sec.x), 305, 200, 30);
+    ctx.fillStyle = isBoss ? "#ffd700" : "#fff";
+    ctx.font = "13px Arial"; ctx.fillText(sec.label, sx(sec.x) + 8, 325);
+  });
+  bosses.forEach(b => {
+    if (!b.alive || b.x + b.w < cameraX - 200 || b.x > cameraX + VIEW_W + 200) return;
+    ctx.strokeStyle = b.tierColor; ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+    ctx.strokeRect(sx(b.x) - 30, b.y - 50, b.w + 60, b.h + 70);
+    ctx.setLineDash([]); ctx.lineWidth = 1;
+  });
+}
+
+function drawPlayer() {
+  if (player.invincible > 0 && Math.floor(player.invincible / 4) % 2 === 0) ctx.globalAlpha = 0.45;
+  const px = sx(player.x), py = player.y;
+  if (gameReady && playerImg.complete && playerImg.naturalWidth > 0) {
+    ctx.save(); ctx.translate(px + player.w / 2, py + player.h / 2);
+    if (player.facing === -1) ctx.scale(-1, 1);
+    ctx.drawImage(playerImg, -player.w / 2, -player.h / 2, player.w, player.h); ctx.restore();
+  } else { ctx.font = "42px Arial"; ctx.fillStyle = "black"; ctx.fillText("🍈", px, py + 38); }
+  ctx.globalAlpha = 1;
+  if (player.attacking) {
+    ctx.fillStyle = "rgba(255,255,0,0.55)";
+    ctx.fillRect(player.facing === 1 ? px + player.w : px - 40, py + 8, 40, 40);
+  }
+}
+
+function drawFoods() {
+  ctx.font = "30px Arial";
+  foods.forEach(f => {
+    if (f.eaten || f.x + 35 < cameraX || f.x > cameraX + VIEW_W) return;
+    ctx.fillStyle = "black"; ctx.fillText(f.type, sx(f.x), f.y + 30);
+  });
+}
+
+function drawMonsters() {
+  ctx.font = "40px Arial";
+  monsters.forEach(m => {
+    if (!m.alive || m.x + m.w < cameraX - 50 || m.x > cameraX + VIEW_W + 50) return;
+    ctx.fillStyle = "black"; ctx.fillText(m.emoji, sx(m.x), m.y + 40);
+    ctx.fillStyle = "#555"; ctx.fillRect(sx(m.x), m.y - 10, m.maxHp * 9, 5);
+    ctx.fillStyle = "red"; ctx.fillRect(sx(m.x), m.y - 10, m.hp * 9, 5);
+  });
+}
+
+function drawBosses() {
+  bosses.forEach(b => {
+    if (!b.alive || b.x + b.w < cameraX - 100 || b.x > cameraX + VIEW_W + 100) return;
+    const bx = sx(b.x), t = BOSS_TIER[b.tier];
+    if (b.specialCharge > t.cd * 0.4) {
+      ctx.fillStyle = "rgba(255,0,0,0.3)"; ctx.fillRect(bx - 25, b.y - 35, b.w + 50, b.h + 55);
+      ctx.fillStyle = "red"; ctx.font = "16px Arial"; ctx.fillText("⚠ 필살기!", bx - 5, b.y - 40);
+    }
+    if (b.specialActive) {
+      ctx.fillStyle = "rgba(255,100,0,0.5)"; ctx.fillRect(bx - 35, b.y, b.w + 70, b.h);
+      ctx.fillStyle = "orange"; ctx.font = "20px Arial"; ctx.fillText("💥 필살기!", bx, b.y - 48);
+    }
+    ctx.fillStyle = "black"; ctx.font = b.tier === "final" ? "72px Arial" : "58px Arial";
+    ctx.fillText(b.emoji, bx, b.y + 72);
+    const barW = b.maxHp * t.barW;
+    ctx.fillStyle = "#555"; ctx.fillRect(bx, b.y - 18, barW, 9);
+    ctx.fillStyle = b.tierColor; ctx.fillRect(bx, b.y - 18, b.hp * t.barW, 9);
+    ctx.strokeStyle = "#fff"; ctx.strokeRect(bx, b.y - 18, barW, 9);
+    ctx.fillStyle = b.tierColor; ctx.font = "bold 14px Arial"; ctx.fillText("[" + b.tierLabel + "]", bx, b.y - 24);
+    ctx.fillStyle = "black"; ctx.font = "15px Arial"; ctx.fillText(b.name, bx, b.y - 38);
+  });
+}
+
+function drawProjectiles() {
+  bossProjectiles.forEach(p => {
+    if (p.x + p.w < cameraX - 50 || p.x > cameraX + VIEW_W + 50) return;
+    ctx.fillStyle = "rgba(255,50,50,0.85)";
+    ctx.beginPath(); ctx.arc(sx(p.x) + p.w / 2, p.y + p.h / 2, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "white"; ctx.font = "20px Arial"; ctx.fillText("💥", sx(p.x) + 8, p.y + 28);
+  });
+}
+
+function drawUI() {
+  const progress = Math.min(100, Math.floor((player.x / worldWidth) * 100));
+  const nextBoss = bosses.find(b => b.alive);
+  ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, VIEW_W, 62);
+  ctx.fillStyle = "white"; ctx.font = "17px Arial";
+  ctx.fillText("HP:" + Math.floor(player.hp), 12, 22);
+  ctx.fillText("PWR:" + player.power, 12, 42);
+  ctx.fillText("💀" + killCount, 90, 22);
+  ctx.fillText("보스" + bossesDefeated + "/6", 90, 42);
+  ctx.fillStyle = "red"; ctx.fillRect(155, 28, player.hp * 1.5, 10);
+  ctx.strokeStyle = "white"; ctx.strokeRect(155, 28, 150, 10);
+  ctx.fillStyle = "white"; ctx.font = "14px Arial"; ctx.fillText(stage.name, 280, 24);
+  if (nextBoss) { ctx.fillStyle = nextBoss.tierColor; ctx.font = "11px Arial"; ctx.fillText("다음:" + nextBoss.tierLabel, 280, 42); }
+  ctx.fillStyle = "white"; ctx.font = "12px Arial";
+  ctx.fillText("STG" + currentStage + "/2  " + progress + "%", VIEW_W - 120, 30);
+  if (gamePaused) {
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(0, 62, VIEW_W, VIEW_H - 62);
+    ctx.fillStyle = "#ffd700"; ctx.font = "22px Arial"; ctx.fillText("⏸ 일시정지", VIEW_W / 2 - 50, VIEW_H / 2);
+  }
+}
+
+function gameLoop() {
+  drawBackground();
+  if (!gamePaused) update();
+  drawMap(); drawFoods(); drawMonsters(); drawBosses(); drawProjectiles(); drawPlayer(); drawUI();
+  requestAnimationFrame(gameLoop);
+}
+
+bootGame();
+gameLoop();
+</script>
+
+</body>
+</html>

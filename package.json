@@ -1,0 +1,9 @@
+{
+  "name": "melon-adventure",
+  "version": "1.0.0",
+  "description": "멜론말랑이 어드벤처",
+  "scripts": {
+    "start": "npx --yes serve . -p 3000",
+    "open": "start http://localhost:3000"
+  }
+}
